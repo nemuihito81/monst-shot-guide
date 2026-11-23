@@ -317,18 +317,18 @@
       <div class="wall-grid">
         <div class="row">
           <span class="label">上壁</span>
-          <input type="range" id="wallTop" min="5" max="40" step="0.2" value="17.5" />
-          <span class="value-badge" id="wallTopVal">17.5%</span>
+          <input type="range" id="wallTop" min="5" max="45" step="0.2" value="21.5" />
+          <span class="value-badge" id="wallTopVal">21.5%</span>
         </div>
         <div class="row">
           <span class="label">下壁</span>
-          <input type="range" id="wallBottom" min="55" max="95" step="0.2" value="68.5" />
-          <span class="value-badge" id="wallBottomVal">68.5%</span>
+          <input type="range" id="wallBottom" min="50" max="95" step="0.2" value="65.0" />
+          <span class="value-badge" id="wallBottomVal">65.0%</span>
         </div>
         <div class="row">
           <span class="label">左右余白</span>
-          <input type="range" id="wallSide" min="0" max="15" step="0.2" value="2.0" />
-          <span class="value-badge" id="wallSideVal">2.0%</span>
+          <input type="range" id="wallSide" min="0" max="35" step="0.2" value="22.5" />
+          <span class="value-badge" id="wallSideVal">22.5%</span>
         </div>
       </div>
     </details>
@@ -357,8 +357,8 @@
   let isReflect = true;
   let maxBounces = 5;
 
-  // 壁の比率 (%)
-  let wall = { top: 17.5, bottom: 68.5, side: 2.0 };
+  // 壁の比率 (%)（二重枠スクショにも対応しやすい初期値）
+  let wall = { top: 21.5, bottom: 65.0, side: 22.5 };
 
   const angleSlider = document.getElementById("angleSlider");
   const angleVal = document.getElementById("angleVal");
@@ -376,11 +376,50 @@
   }
 
   /**
-   * 敵（HPバー持ち・黄色バリア等）を除外し、
-   * 「1st / 2nd / 3rd / 4th」バッジ直下にあるターンオーラ中心を検出
+   * 画像内の黒帯・余白を自動検出し、実際のゲーム画面領域を返す
+   */
+  function detectGameViewport(data, w, h) {
+    // 縦中央付近（h * 0.35 〜 h * 0.65）で左右の黒帯を調べる
+    const sampleY1 = Math.round(h * 0.35);
+    const sampleY2 = Math.round(h * 0.65);
+
+    function isDarkCol(x) {
+      let dark = 0;
+      let total = 0;
+      for (let y = sampleY1; y <= sampleY2; y += 3) {
+        const p = (y * w + x) * 4;
+        total++;
+        if (data[p] < 35 && data[p + 1] < 35 && data[p + 2] < 35) {
+          dark++;
+        }
+      }
+      return dark / total > 0.75;
+    }
+
+    let left = 0;
+    while (left < w * 0.42 && isDarkCol(left)) left++;
+
+    let right = w - 1;
+    while (right > w * 0.58 && isDarkCol(right)) right--;
+
+    // 黒帯がない全画面スクショの場合
+    if (right - left < w * 0.35) {
+      left = 0;
+      right = w - 1;
+    }
+
+    const viewW = Math.max(40, right - left + 1);
+    const top = Math.round(h * 0.14);
+    const bottom = Math.round(h * 0.82);
+
+    return { left, right, top, bottom, viewW };
+  }
+
+  /**
+   * 「1st / 2nd / 3rd / 4th」バッジ直下にあるターンオーラ中心を自動検出
    */
   function autoDetectAuraCenter(sourceImg) {
-    const scaleW = 400;
+    const scaleW = 420;
     const scale = scaleW / sourceImg.width;
     const w = scaleW;
     const h = Math.round(sourceImg.height * scale);
@@ -392,64 +431,59 @@
     octx.drawImage(sourceImg, 0, 0, w, h);
     const data = octx.getImageData(0, 0, w, h).data;
 
-    // ステージ内の検索範囲
-    const minX = Math.round(w * 0.08);
-    const maxX = Math.round(w * 0.92);
-    const minY = Math.round(h * (wall.top / 100) + w * 0.06);
-    const maxY = Math.round(h * (wall.bottom / 100) - w * 0.03);
+    const vp = detectGameViewport(data, w, h);
+    const unit = vp.viewW; // 実際のモンスト画面の横幅基準
+
+    const minX = Math.max(vp.left, Math.round(vp.left + unit * 0.06));
+    const maxX = Math.min(vp.right, Math.round(vp.right - unit * 0.06));
+    const minY = Math.max(0, Math.round(h * 0.22));
+    const maxY = Math.min(h - 1, Math.round(h * 0.72));
 
     const size = w * h;
-    const whiteMask = new Uint8Array(size);     // 1st/2nd等の白フチ
-    const badgeColorMask = new Uint8Array(size);// 1st(赤)/2nd(橙)/3rd(青)/4th(紫)の文字色
-    const pinkCyanAura = new Uint8Array(size);  // ターンキャラ特有のピンク・シアン・白発光オーラ
-    const yellowBarrier = new Uint8Array(size); // 敵の黄色バリア（除外用）
-    const hpGreenMask = new Uint8Array(size);   // 敵のHPバー（除外用）
-    const darkMask = new Uint8Array(size);      // ワープ中心の黒（除外用）
+    const whiteMask = new Uint8Array(size);
+    const badgeColorMask = new Uint8Array(size);
+    const auraMask = new Uint8Array(size);
+    const yellowBarrier = new Uint8Array(size);
+    const hpGreenMask = new Uint8Array(size);
+    const darkMask = new Uint8Array(size);
 
     for (let i = 0; i < size; i++) {
       const p = i * 4;
       const r = data[p], g = data[p + 1], b = data[p + 2];
 
-      // 白フチ
-      if (r > 220 && g > 220 && b > 220) {
+      if (r > 215 && g > 215 && b > 215) {
         whiteMask[i] = 1;
       }
 
-      // 1st(赤)・2nd(橙)などの鮮やか文字色（単純な黄色数字を除外）
-      const is1stRed = r > 175 && g < 110 && b < 110 && r - g > 95;
-      const is2ndOrange = r > 195 && g >= 85 && g <= 165 && b < 85 && r - g > 55;
-      const is3rd4thBluePurple = b > 170 && r < 185 && b - g > 45;
+      const is1stRed = r > 170 && g < 120 && b < 120 && r - g > 85;
+      const is2ndOrange = r > 190 && g >= 80 && g <= 170 && b < 90 && r - g > 50;
+      const is3rd4thBluePurple = b > 165 && r < 190 && b - g > 40;
       if (is1stRed || is2ndOrange || is3rd4thBluePurple) {
         badgeColorMask[i] = 1;
       }
 
-      // ターンオーラの色（マゼンタ・ピンク・シアン・白紫系の発光リング）
-      const isMagentaPink = r > 185 && b > 155 && g < 210 && (r - g > 35 || b - g > 25);
-      const isCyanGlow = b > 195 && g > 175 && r < 215 && b - r > 20;
-      const isWhiteGlow = r > 230 && g > 225 && b > 235;
+      const isMagentaPink = r > 180 && b > 150 && g < 215 && (r - g > 30 || b - g > 20);
+      const isCyanGlow = b > 190 && g > 170 && r < 220 && b - r > 15;
+      const isWhiteGlow = r > 228 && g > 222 && b > 232;
       if (isMagentaPink || isCyanGlow || isWhiteGlow) {
-        pinkCyanAura[i] = 1;
+        auraMask[i] = 1;
       }
 
-      // 敵の黄色レーザーバリア・黄色フィールド（RとGが高くBが低い）
       if (r > 205 && g > 185 && b < 165 && r - b > 55) {
         yellowBarrier[i] = 1;
       }
 
-      // 敵のHPバーの緑色
-      if (g > 165 && r < 145 && b < 110 && g - r > 45) {
+      if (g > 160 && r < 150 && b < 115 && g - r > 40) {
         hpGreenMask[i] = 1;
       }
 
-      // ワープホール中心の黒
       if (r < 55 && g < 55 && b < 55) {
         darkMask[i] = 1;
       }
     }
 
-    // 実際のキャラオーラ半径（画像幅の約 5.5% 〜 6.6%）
-    const rInner = w * 0.054;
-    const rOuter = w * 0.065;
+    const rInner = unit * 0.052;
+    const rOuter = unit * 0.068;
     const numSamples = 36;
     const cosTable = new Float32Array(numSamples);
     const sinTable = new Float32Array(numSamples);
@@ -460,9 +494,9 @@
     }
 
     function evaluateCandidate(cx, cy) {
-      // 1. 中心がワープホール（真っ黒）なら除外
+      // 1. ワープホール中心の黒除外
       let darkCount = 0;
-      const coreR = Math.round(w * 0.022);
+      const coreR = Math.max(2, Math.round(unit * 0.022));
       for (let dy = -coreR; dy <= coreR; dy += 2) {
         for (let dx = -coreR; dx <= coreR; dx += 2) {
           const idx = (cy + dy) * w + (cx + dx);
@@ -471,24 +505,24 @@
       }
       if (darkCount > 8) return -1;
 
-      // 2. 敵のHPバー除外（中心より少し下に横長の緑色HPバーがあれば確実に敵）
-      const hpY1 = Math.min(h - 1, Math.round(cy + w * 0.045));
-      const hpY2 = Math.min(h - 1, Math.round(cy + w * 0.095));
-      const hpX1 = Math.max(0, Math.round(cx - w * 0.05));
-      const hpX2 = Math.min(w - 1, Math.round(cx + w * 0.05));
+      // 2. 敵のHPバー除外
+      const hpY1 = Math.min(h - 1, Math.round(cy + unit * 0.045));
+      const hpY2 = Math.min(h - 1, Math.round(cy + unit * 0.095));
+      const hpX1 = Math.max(0, Math.round(cx - unit * 0.05));
+      const hpX2 = Math.min(w - 1, Math.round(cx + unit * 0.05));
       let hpHits = 0;
       for (let y = hpY1; y <= hpY2; y++) {
         for (let x = hpX1; x <= hpX2; x++) {
           if (hpGreenMask[y * w + x]) hpHits++;
         }
       }
-      if (hpHits >= 6) return -1;
+      if (hpHits >= 5) return -1;
 
-      // 3. 条件：「1st / 2nd 等の下」にあるか（キャラ中心の左上〜直上のバッジ領域）
-      const bx1 = Math.max(0, Math.round(cx - w * 0.068));
-      const bx2 = Math.min(w - 1, Math.round(cx + w * 0.025));
-      const by1 = Math.max(0, Math.round(cy - w * 0.082));
-      const by2 = Math.max(0, Math.round(cy - w * 0.028));
+      // 3. 「1st / 2nd / 3rd / 4th」バッジが直上〜左上に存在するか
+      const bx1 = Math.max(0, Math.round(cx - unit * 0.072));
+      const bx2 = Math.min(w - 1, Math.round(cx + unit * 0.030));
+      const by1 = Math.max(0, Math.round(cy - unit * 0.088));
+      const by2 = Math.max(0, Math.round(cy - unit * 0.025));
 
       let whiteCnt = 0;
       let colorCnt = 0;
@@ -507,13 +541,12 @@
         }
       }
 
-      // 1st/2ndは3文字分の横幅があるため、ある程度の横広がりと文字色・白フチが必要
       const textWidth = maxTextX - minTextX;
-      if (whiteCnt < 10 || colorCnt < 5 || textWidth < w * 0.022) return -1;
+      if (whiteCnt < 7 || colorCnt < 3 || textWidth < unit * 0.018) return -1;
 
       const badgeScore = Math.min(45, whiteCnt) + Math.min(60, colorCnt * 2.5);
 
-      // 4. キャラ外周のピンク/シアン発光オーラリングを評価（黄色バリアは減点）
+      // 4. キャラ外周のオーラリング評価
       let auraHits = 0;
       let yellowHits = 0;
       const quadHits = [0, 0, 0, 0];
@@ -528,12 +561,12 @@
         let hit = 0;
         if (x1 >= 0 && x1 < w && y1 >= 0 && y1 < h) {
           const idx1 = y1 * w + x1;
-          if (pinkCyanAura[idx1]) hit++;
+          if (auraMask[idx1]) hit++;
           if (yellowBarrier[idx1]) yellowHits++;
         }
         if (x2 >= 0 && x2 < w && y2 >= 0 && y2 < h) {
           const idx2 = y2 * w + x2;
-          if (pinkCyanAura[idx2]) hit++;
+          if (auraMask[idx2]) hit++;
           if (yellowBarrier[idx2]) yellowHits++;
         }
         if (hit > 0) {
@@ -542,20 +575,18 @@
         }
       }
 
-      // 黄色バリアばかり反応している場合は除外
       if (yellowHits > auraHits) return -1;
-      if (auraHits < 12) return -1;
+      if (auraHits < 8) return -1;
 
       const activeQuads = quadHits.filter((v) => v > 0).length;
-      const quadBonus = activeQuads === 4 ? 1.6 : activeQuads === 3 ? 1.1 : 0.5;
+      const quadBonus = activeQuads === 4 ? 1.6 : activeQuads === 3 ? 1.15 : 0.6;
 
       return badgeScore * auraHits * quadBonus;
     }
 
-    // 粗探索
     let bestScore = -1;
-    let bestX = Math.round(w * 0.5);
-    let bestY = Math.round(h * 0.55);
+    let bestX = Math.round((vp.left + vp.right) * 0.5);
+    let bestY = Math.round(h * 0.58);
 
     for (let cy = minY; cy <= maxY; cy += 2) {
       for (let cx = minX; cx <= maxX; cx += 2) {
@@ -568,7 +599,6 @@
       }
     }
 
-    // 精密探索（周辺 ±4px を 1px 単位）
     if (bestScore > 0) {
       const searchR = 4;
       const startX = bestX, startY = bestY;
@@ -593,9 +623,9 @@
 
     return {
       found: false,
-      x: Math.round(sourceImg.width * 0.5),
-      y: Math.round(sourceImg.height * 0.55),
-      radius: Math.round(sourceImg.width * 0.06)
+      x: Math.round((vp.left + vp.right) * 0.5 / scale),
+      y: Math.round(h * 0.58 / scale),
+      radius: Math.round(unit * 0.06 / scale)
     };
   }
 
@@ -635,7 +665,6 @@
     newImg.src = src;
   }
 
-  // ファイル読み込み
   document.getElementById("fileInput").addEventListener("change", (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -644,7 +673,6 @@
     reader.readAsDataURL(file);
   });
 
-  // クリップボード貼り付け
   document.getElementById("pasteBtn").addEventListener("click", async () => {
     try {
       const items = await navigator.clipboard.read();
@@ -662,7 +690,6 @@
     }
   });
 
-  // 自動検出ボタン
   document.getElementById("autoDetectBtn").addEventListener("click", () => {
     if (!img) return;
     isLocked = false;
@@ -670,7 +697,6 @@
     runAutoDetect();
   });
 
-  // 始点ロック切替
   function updateLockUI() {
     if (isLocked) {
       lockBtn.textContent = "始点ロック中（解除）";
@@ -686,7 +712,6 @@
     draw();
   });
 
-  // 撃種切替
   document.getElementById("typeReflect").addEventListener("click", (e) => {
     isReflect = true;
     e.target.classList.add("active");
@@ -705,7 +730,6 @@
     draw();
   });
 
-  // 角度更新
   function setAngle(val) {
     angleDeg = ((val % 360) + 360) % 360;
     angleSlider.value = angleDeg.toFixed(1);
@@ -720,7 +744,6 @@
     });
   });
 
-  // 座標スライダー・微調整
   xSlider.addEventListener("input", (e) => {
     if (isLocked) return;
     origin.x = parseInt(e.target.value, 10);
@@ -748,7 +771,6 @@
     });
   });
 
-  // 壁調整
   ["wallTop", "wallBottom", "wallSide"].forEach((id) => {
     document.getElementById(id).addEventListener("input", (e) => {
       const v = parseFloat(e.target.value);
@@ -760,7 +782,6 @@
     });
   });
 
-  // 再検出/リセット
   document.getElementById("resetBtn").addEventListener("click", () => {
     if (!img) return;
     isLocked = false;
@@ -769,7 +790,6 @@
     runAutoDetect();
   });
 
-  // 共有・保存
   document.getElementById("shareBtn").addEventListener("click", async () => {
     if (!img) return;
     canvas.toBlob(async (blob) => {
@@ -785,7 +805,6 @@
     });
   });
 
-  // キャンバス上のタッチ・ドラッグ操作
   let dragging = false;
   function getCanvasPos(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
@@ -810,38 +829,3 @@
       const rad = Math.atan2(pos.y - origin.y, pos.x - origin.x);
       setAngle((rad * 180) / Math.PI);
     }
-  }
-
-  canvas.addEventListener("pointerdown", (e) => {
-    dragging = true;
-    canvas.setPointerCapture(e.pointerId);
-    handlePointer(e.clientX, e.clientY);
-  });
-  canvas.addEventListener("pointermove", (e) => {
-    if (!dragging) return;
-    handlePointer(e.clientX, e.clientY);
-  });
-  canvas.addEventListener("pointerup", () => { dragging = false; });
-
-  // 描画処理
-  function draw() {
-    if (!img) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0);
-
-    const w = canvas.width;
-    const h = canvas.height;
-    const leftX = (w * wall.side) / 100;
-    const rightX = w - leftX;
-    const topY = (h * wall.top) / 100;
-    const bottomY = (h * wall.bottom) / 100;
-
-    // ステージ枠（壁のガイド線）
-    ctx.save();
-    ctx.strokeStyle = "rgba(250, 204, 21, 0.55)";
-    ctx.lineWidth = Math.max(2, w * 0.004);
-    ctx.setLineDash([12, 8]);
-    ctx.strokeRect(leftX, topY, rightX - leftX, bottomY - topY);
-    ctx.restore();
-
-    // 弾道シミュレーション
