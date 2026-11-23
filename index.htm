@@ -34,7 +34,7 @@
       padding-bottom: 84px;
     }
     header {
-      padding: 10px 14px;
+      padding: 10px 12px;
       background: var(--panel);
       border-bottom: 1px solid var(--border);
       display: flex;
@@ -43,22 +43,26 @@
       position: sticky;
       top: 0;
       z-index: 20;
+      gap: 6px;
     }
     header h1 {
-      font-size: 15px;
+      font-size: 14px;
       margin: 0;
       font-weight: 700;
+      white-space: nowrap;
     }
     .top-actions {
       display: flex;
-      gap: 6px;
+      gap: 5px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
     button, label.btn {
       background: #334155;
       color: var(--text);
       border: 1px solid #475569;
       border-radius: 8px;
-      padding: 7px 11px;
+      padding: 7px 10px;
       font-size: 12px;
       font-weight: 600;
       cursor: pointer;
@@ -66,13 +70,25 @@
       align-items: center;
       justify-content: center;
       gap: 4px;
+      white-space: nowrap;
     }
     button:active, label.btn:active {
       transform: scale(0.97);
     }
-    button.primary { background: #0284c7; border-color: #0369a1; }
+    button.primary, label.primary { background: #0284c7; border-color: #0369a1; }
+    button.auto-btn { background: #7c3aed; border-color: #6d28d9; }
     button.lock-active { background: var(--danger); border-color: #b91c1c; }
     button.success { background: #16a34a; border-color: #15803d; }
+
+    .status-toast {
+      background: rgba(124, 58, 237, 0.2);
+      border-bottom: 1px solid rgba(139, 92, 246, 0.4);
+      color: #ddd6fe;
+      font-size: 11px;
+      text-align: center;
+      padding: 4px 8px;
+      display: none;
+    }
 
     .canvas-wrapper {
       position: relative;
@@ -147,7 +163,7 @@
       gap: 4px;
     }
     .step-btns button {
-      padding: 6px 9px;
+      padding: 6px 8px;
       font-size: 12px;
     }
 
@@ -215,21 +231,24 @@
 <body>
 
 <header>
-  <h1>弾道予測シミュレーター</h1>
+  <h1>弾道予測</h1>
   <div class="top-actions">
     <label class="btn primary">
       画像読込
       <input type="file" id="fileInput" accept="image/*" hidden />
     </label>
     <button id="pasteBtn">貼付</button>
-    <button id="shareBtn" class="success">共有/保存</button>
+    <button id="autoDetectBtn" class="auto-btn">自動検出</button>
+    <button id="shareBtn" class="success">共有</button>
   </div>
 </header>
+<div id="statusToast" class="status-toast"></div>
 
 <div class="canvas-wrapper" id="canvasWrapper">
   <div class="placeholder" id="placeholder">
     「画像読込」からモンストのスクショを選択するか、<br>
-    スクショをコピーして「貼付」を押してください。
+    スクショをコピーして「貼付」を押してください。<br>
+    <span style="color:#a78bfa;font-size:12px;">※1st/2ndのオーラ中心を自動で検出します</span>
   </div>
   <canvas id="canvas" style="display:none;"></canvas>
 </div>
@@ -256,8 +275,8 @@
 
     <div class="row">
       <span class="label">発射角度</span>
-      <input type="range" id="angleSlider" min="0" max="360" step="0.1" value="45.0" />
-      <span class="value-badge" id="angleVal">45.0°</span>
+      <input type="range" id="angleSlider" min="0" max="360" step="0.1" value="270.0" />
+      <span class="value-badge" id="angleVal">270.0°</span>
     </div>
     <div class="row" style="justify-content:flex-end;">
       <div class="step-btns">
@@ -298,18 +317,18 @@
       <div class="wall-grid">
         <div class="row">
           <span class="label">上壁</span>
-          <input type="range" id="wallTop" min="5" max="40" step="0.2" value="18.5" />
-          <span class="value-badge" id="wallTopVal">18.5%</span>
+          <input type="range" id="wallTop" min="5" max="40" step="0.2" value="17.5" />
+          <span class="value-badge" id="wallTopVal">17.5%</span>
         </div>
         <div class="row">
           <span class="label">下壁</span>
-          <input type="range" id="wallBottom" min="55" max="95" step="0.2" value="78.5" />
-          <span class="value-badge" id="wallBottomVal">78.5%</span>
+          <input type="range" id="wallBottom" min="55" max="95" step="0.2" value="68.5" />
+          <span class="value-badge" id="wallBottomVal">68.5%</span>
         </div>
         <div class="row">
           <span class="label">左右余白</span>
-          <input type="range" id="wallSide" min="0" max="15" step="0.2" value="2.5" />
-          <span class="value-badge" id="wallSideVal">2.5%</span>
+          <input type="range" id="wallSide" min="0" max="15" step="0.2" value="2.0" />
+          <span class="value-badge" id="wallSideVal">2.0%</span>
         </div>
       </div>
     </details>
@@ -320,7 +339,7 @@
 <div class="bottom-bar">
   <div class="bottom-bar-inner">
     <button id="lockBtn">始点を固定する</button>
-    <button id="resetBtn">リセット</button>
+    <button id="resetBtn">再検出/リセット</button>
   </div>
 </div>
 
@@ -328,16 +347,18 @@
   const canvas = document.getElementById("canvas");
   const ctx = canvas.getContext("2d");
   const placeholder = document.getElementById("placeholder");
+  const statusToast = document.getElementById("statusToast");
 
   let img = null;
   let origin = { x: 0, y: 0 };
-  let angleDeg = 45.0; // 0度=右, 90度=下, 180度=左, 270度=上
+  let detectedAuraRadius = 0;
+  let angleDeg = 270.0; // 0度=右, 90度=下, 180度=左, 270度=上
   let isLocked = false;
   let isReflect = true;
   let maxBounces = 5;
 
-  // 壁の比率 (%)
-  let wall = { top: 18.5, bottom: 78.5, side: 2.5 };
+  // 壁の比率 (%) - iPhoneスクショ比率に最適化
+  let wall = { top: 17.5, bottom: 68.5, side: 2.0 };
 
   // UI要素
   const angleSlider = document.getElementById("angleSlider");
@@ -345,6 +366,213 @@
   const xSlider = document.getElementById("xSlider");
   const ySlider = document.getElementById("ySlider");
   const lockBtn = document.getElementById("lockBtn");
+
+  function showToast(msg) {
+    statusToast.textContent = msg;
+    statusToast.style.display = "block";
+    clearTimeout(showToast._timer);
+    showToast._timer = setTimeout(() => {
+      statusToast.style.display = "none";
+    }, 3500);
+  }
+
+  /**
+   * 1st / 2nd バッジの直下にある発光オーラ（ターンリング）の中心を自動検出
+   */
+  function autoDetectAuraCenter(sourceImg) {
+    const scaleW = 360;
+    const scale = scaleW / sourceImg.width;
+    const w = scaleW;
+    const h = Math.round(sourceImg.height * scale);
+
+    const off = document.createElement("canvas");
+    off.width = w;
+    off.height = h;
+    const octx = off.getContext("2d", { willReadFrequently: true });
+    octx.drawImage(sourceImg, 0, 0, w, h);
+    const data = octx.getImageData(0, 0, w, h).data;
+
+    // 検索範囲（ステージ枠内）
+    const minX = Math.round(w * 0.06);
+    const maxX = Math.round(w * 0.94);
+    const minY = Math.round(h * (wall.top / 100) + w * 0.06);
+    const maxY = Math.round(h * (wall.bottom / 100) - w * 0.03);
+
+    // 特徴マップを事前計算
+    const size = w * h;
+    const whiteMask = new Uint8Array(size);    // 1st/2ndの白フチ文字
+    const redOrangeMask = new Uint8Array(size);// 1st(赤)/2nd(橙)の文字色
+    const otherTextMask = new Uint8Array(size);// 3rd/4th等の文字色
+    const auraMask = new Uint8Array(size);     // 発光オーラ（高輝度・高彩度リング）
+    const darkMask = new Uint8Array(size);     // ワープ中心などの暗部
+
+    for (let i = 0; i < size; i++) {
+      const p = i * 4;
+      const r = data[p], g = data[p + 1], b = data[p + 2];
+      const maxC = Math.max(r, g, b);
+      const minC = Math.min(r, g, b);
+      const sat = maxC - minC;
+
+      // 白フチ（高輝度・低彩度）
+      if (r > 215 && g > 215 && b > 215) {
+        whiteMask[i] = 1;
+      }
+      // 1st(赤系)・2nd(オレンジ系)の文字色
+      if (r > 175 && g < 135 && b < 110 && r - b > 85) {
+        redOrangeMask[i] = 1;
+      } else if (sat > 85 && maxC > 165) {
+        otherTextMask[i] = 1;
+      }
+
+      // 発光オーラ判定（ピンク/マゼンタ/シアン/白発光などのターンリング）
+      const isPinkCyanGlow = (r > 185 && b > 175 && (r > 215 || b > 215)) || (g > 200 && b > 210);
+      const isBrightColoredGlow = maxC > 195 && sat > 55;
+      if (isPinkCyanGlow || isBrightColoredGlow) {
+        auraMask[i] = 1;
+      }
+
+      // ワープホール中心の黒判定
+      if (r < 55 && g < 55 && b < 55) {
+        darkMask[i] = 1;
+      }
+    }
+
+    // キャラのオーラ半径（画像幅の約6.8%）
+    const rInner = w * 0.062;
+    const rOuter = w * 0.075;
+    const numSamples = 36;
+    const cosTable = new Float32Array(numSamples);
+    const sinTable = new Float32Array(numSamples);
+    for (let k = 0; k < numSamples; k++) {
+      const a = (k * Math.PI * 2) / numSamples;
+      cosTable[k] = Math.cos(a);
+      sinTable[k] = Math.sin(a);
+    }
+
+    function evaluateCandidate(cx, cy) {
+      // 1. 中心がワープホール（真っ黒）なら除外
+      let darkCount = 0;
+      const coreR = Math.round(w * 0.025);
+      for (let dy = -coreR; dy <= coreR; dy += 2) {
+        for (let dx = -coreR; dx <= coreR; dx += 2) {
+          const idx = (cy + dy) * w + (cx + dx);
+          if (idx >= 0 && idx < size && darkMask[idx]) darkCount++;
+        }
+      }
+      if (darkCount > 10) return -1;
+
+      // 2. 条件：「1st / 2nd の下」にあるか（中心の左上〜直上のバッジ領域を検査）
+      const bx1 = Math.max(0, Math.round(cx - w * 0.070));
+      const bx2 = Math.min(w - 1, Math.round(cx + w * 0.035));
+      const by1 = Math.max(0, Math.round(cy - w * 0.088));
+      const by2 = Math.max(0, Math.round(cy - w * 0.028));
+
+      let whiteCnt = 0;
+      let redOrangeCnt = 0;
+      let otherTxtCnt = 0;
+      for (let y = by1; y <= by2; y++) {
+        const rowOffset = y * w;
+        for (let x = bx1; x <= bx2; x++) {
+          const idx = rowOffset + x;
+          whiteCnt += whiteMask[idx];
+          redOrangeCnt += redOrangeMask[idx];
+          otherTxtCnt += otherTextMask[idx];
+        }
+      }
+
+      // 白フチ＋文字色が一定以上ないと「1st/2nd等の下」とみなさない
+      const textTotal = redOrangeCnt * 1.6 + otherTxtCnt;
+      if (whiteCnt < 8 || textTotal < 4) return -1;
+      const badgeScore = Math.min(40, whiteCnt) + Math.min(50, textTotal * 2.2);
+
+      // 3. オーラリング（全周発光）のスコア計算
+      let ringHits = 0;
+      const quadHits = [0, 0, 0, 0]; // 4象限すべてにオーラがあるか
+      for (let k = 0; k < numSamples; k++) {
+        const q = Math.floor((k * 4) / numSamples);
+        const x1 = Math.round(cx + cosTable[k] * rInner);
+        const y1 = Math.round(cy + sinTable[k] * rInner);
+        const x2 = Math.round(cx + cosTable[k] * rOuter);
+        const y2 = Math.round(cy + sinTable[k] * rOuter);
+
+        let hit = 0;
+        if (x1 >= 0 && x1 < w && y1 >= 0 && y1 < h && auraMask[y1 * w + x1]) hit++;
+        if (x2 >= 0 && x2 < w && y2 >= 0 && y2 < h && auraMask[y2 * w + x2]) hit++;
+        if (hit > 0) {
+          ringHits += hit;
+          quadHits[q] += hit;
+        }
+      }
+
+      // 4象限バランス（片側だけのエフェクトではなく円周全体が光っているものを優遇）
+      const minQuad = Math.min(...quadHits);
+      const quadBalance = minQuad > 0 ? 1.35 : 0.7;
+
+      return badgeScore * (ringHits + 1) * quadBalance;
+    }
+
+    // 粗探索（ステップ2px）
+    let bestScore = -1;
+    let bestX = Math.round(w * 0.5);
+    let bestY = Math.round(h * 0.55);
+
+    for (let cy = minY; cy <= maxY; cy += 2) {
+      for (let cx = minX; cx <= maxX; cx += 2) {
+        const sc = evaluateCandidate(cx, cy);
+        if (sc > bestScore) {
+          bestScore = sc;
+          bestX = cx;
+          bestY = cy;
+        }
+      }
+    }
+
+    // 精密探索（周辺 ±4px を 1px 単位で微調整）
+    if (bestScore > 0) {
+      const searchR = 4;
+      const startX = bestX, startY = bestY;
+      for (let cy = startY - searchR; cy <= startY + searchR; cy++) {
+        for (let cx = startX - searchR; cx <= startX + searchR; cx++) {
+          if (cx < minX || cx > maxX || cy < minY || cy > maxY) continue;
+          const sc = evaluateCandidate(cx, cy);
+          if (sc > bestScore) {
+            bestScore = sc;
+            bestX = cx;
+            bestY = cy;
+          }
+        }
+      }
+      return {
+        found: true,
+        x: Math.round(bestX / scale),
+        y: Math.round(bestY / scale),
+        radius: Math.round(((rInner + rOuter) * 0.5) / scale)
+      };
+    }
+
+    return {
+      found: false,
+      x: Math.round(sourceImg.width * 0.5),
+      y: Math.round(sourceImg.height * 0.55),
+      radius: Math.round(sourceImg.width * 0.068)
+    };
+  }
+
+  function runAutoDetect() {
+    if (!img) return;
+    const res = autoDetectAuraCenter(img);
+    origin.x = res.x;
+    origin.y = res.y;
+    detectedAuraRadius = res.radius;
+    xSlider.value = origin.x;
+    ySlider.value = origin.y;
+    draw();
+    if (res.found) {
+      showToast("1st/2nd下のオーラ中心を自動検出しました");
+    } else {
+      showToast("自動検出できなかったため中央に配置しました（手動調整可）");
+    }
+  }
 
   function loadImageFromSrc(src) {
     const newImg = new Image();
@@ -355,17 +583,14 @@
       placeholder.style.display = "none";
       canvas.style.display = "block";
 
-      // 初期始点を中央にセット
-      origin.x = Math.round(img.width * 0.5);
-      origin.y = Math.round(img.height * 0.5);
       xSlider.max = img.width;
       ySlider.max = img.height;
-      xSlider.value = origin.x;
-      ySlider.value = origin.y;
 
       isLocked = false;
       updateLockUI();
-      draw();
+
+      // 読み込み時に自動でオーラ中心を検出してセット
+      runAutoDetect();
     };
     newImg.src = src;
   }
@@ -395,6 +620,14 @@
     } catch (err) {
       alert("貼り付けが許可されていません。「画像読込」から選択してください。");
     }
+  });
+
+  // 自動検出ボタン
+  document.getElementById("autoDetectBtn").addEventListener("click", () => {
+    if (!img) return;
+    isLocked = false;
+    updateLockUI();
+    runAutoDetect();
   });
 
   // 始点ロック切替
@@ -487,16 +720,13 @@
     });
   });
 
-  // リセット
+  // 再検出/リセット
   document.getElementById("resetBtn").addEventListener("click", () => {
     if (!img) return;
     isLocked = false;
     updateLockUI();
-    origin.x = Math.round(img.width * 0.5);
-    origin.y = Math.round(img.height * 0.5);
-    xSlider.value = origin.x;
-    ySlider.value = origin.y;
     setAngle(270);
+    runAutoDetect();
   });
 
   // 共有・保存
@@ -531,14 +761,12 @@
     if (!img) return;
     const pos = getCanvasPos(clientX, clientY);
     if (!isLocked) {
-      // 始点の移動
       origin.x = Math.max(0, Math.min(img.width, Math.round(pos.x)));
       origin.y = Math.max(0, Math.min(img.height, Math.round(pos.y)));
       xSlider.value = origin.x;
       ySlider.value = origin.y;
       draw();
     } else {
-      // ロック中は指の方向へ角度変更
       const rad = Math.atan2(pos.y - origin.y, pos.x - origin.x);
       setAngle((rad * 180) / Math.PI);
     }
@@ -640,8 +868,19 @@
     }
     ctx.restore();
 
+    // オーラ外周ガイド円（薄く表示して中心合わせしやすくする）
+    const auraR = detectedAuraRadius || Math.round(w * 0.068);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(origin.x, origin.y, auraR, 0, Math.PI * 2);
+    ctx.strokeStyle = isLocked ? "rgba(239, 68, 68, 0.45)" : "rgba(34, 197, 94, 0.55)";
+    ctx.lineWidth = Math.max(2, w * 0.004);
+    ctx.setLineDash([6, 6]);
+    ctx.stroke();
+    ctx.restore();
+
     // 始点マーカー（レティクル）描画
-    const r = Math.max(18, w * 0.035);
+    const r = Math.max(16, w * 0.032);
     ctx.save();
     ctx.beginPath();
     ctx.arc(origin.x, origin.y, r, 0, Math.PI * 2);
