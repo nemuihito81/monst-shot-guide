@@ -34,7 +34,7 @@
       padding-bottom: 84px;
     }
     header {
-      padding: 10px 12px;
+      padding: 10px 14px;
       background: var(--panel);
       border-bottom: 1px solid var(--border);
       display: flex;
@@ -43,19 +43,15 @@
       position: sticky;
       top: 0;
       z-index: 20;
-      gap: 6px;
     }
     header h1 {
-      font-size: 14px;
+      font-size: 15px;
       margin: 0;
       font-weight: 700;
-      white-space: nowrap;
     }
     .top-actions {
       display: flex;
-      gap: 5px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
+      gap: 6px;
       align-items: center;
     }
     button, .file-btn-wrap {
@@ -63,7 +59,7 @@
       color: var(--text);
       border: 1px solid #475569;
       border-radius: 8px;
-      padding: 7px 10px;
+      padding: 7px 11px;
       font-size: 12px;
       font-weight: 600;
       cursor: pointer;
@@ -71,7 +67,6 @@
       align-items: center;
       justify-content: center;
       gap: 4px;
-      white-space: nowrap;
       position: relative;
       overflow: hidden;
     }
@@ -91,19 +86,8 @@
       cursor: pointer;
       font-size: 16px;
     }
-    button.auto-btn { background: #7c3aed; border-color: #6d28d9; }
     button.lock-active { background: var(--danger); border-color: #b91c1c; }
     button.success { background: #16a34a; border-color: #15803d; }
-
-    .status-toast {
-      background: rgba(124, 58, 237, 0.25);
-      border-bottom: 1px solid rgba(139, 92, 246, 0.5);
-      color: #ede9fe;
-      font-size: 11px;
-      text-align: center;
-      padding: 5px 8px;
-      display: none;
-    }
 
     .canvas-wrapper {
       position: relative;
@@ -178,7 +162,7 @@
       gap: 4px;
     }
     .step-btns button {
-      padding: 6px 8px;
+      padding: 6px 9px;
       font-size: 12px;
     }
 
@@ -246,30 +230,26 @@
 <body>
 
 <header>
-  <h1>弾道予測</h1>
+  <h1>弾道予測シミュレーター</h1>
   <div class="top-actions">
     <div class="file-btn-wrap primary">
       <span>画像読込</span>
       <input type="file" id="fileInput" accept="image/*" />
     </div>
     <button id="pasteBtn">貼付</button>
-    <button id="autoDetectBtn" class="auto-btn">自動検出</button>
-    <button id="shareBtn" class="success">共有</button>
+    <button id="shareBtn" class="success">共有/保存</button>
   </div>
 </header>
-<div id="statusToast" class="status-toast"></div>
 
 <div class="canvas-wrapper" id="canvasWrapper">
   <div class="placeholder" id="placeholder">
     「画像読込」からモンストのスクショを選択するか、<br>
-    スクショをコピーして「貼付」を押してください。<br>
-    <span style="color:#a78bfa;font-size:12px;">※1st/2nd下のオーラ中心を自動検出します</span>
+    スクショをコピーして「貼付」を押してください。
   </div>
   <canvas id="canvas" style="display:none;"></canvas>
 </div>
 
 <div class="controls">
-  <!-- 角度調整 -->
   <div class="card">
     <div class="row">
       <span class="label">撃種</span>
@@ -290,8 +270,8 @@
 
     <div class="row">
       <span class="label">発射角度</span>
-      <input type="range" id="angleSlider" min="0" max="360" step="0.1" value="270.0" />
-      <span class="value-badge" id="angleVal">270.0°</span>
+      <input type="range" id="angleSlider" min="0" max="360" step="0.1" value="45.0" />
+      <span class="value-badge" id="angleVal">45.0°</span>
     </div>
     <div class="row" style="justify-content:flex-end;">
       <div class="step-btns">
@@ -305,7 +285,6 @@
     </div>
   </div>
 
-  <!-- 始点座標微調整 -->
   <div class="card">
     <div class="row">
       <span class="label">左右 (X)</span>
@@ -325,36 +304,34 @@
     </div>
   </div>
 
-  <!-- 壁（ステージ枠）微調整 -->
   <div class="card">
     <details id="wallDetails">
       <summary>ステージ枠（壁の反射位置）の微調整</summary>
       <div class="wall-grid">
         <div class="row">
           <span class="label">上壁</span>
-          <input type="range" id="wallTop" min="5" max="45" step="0.2" value="21.5" />
-          <span class="value-badge" id="wallTopVal">21.5%</span>
+          <input type="range" id="wallTop" min="5" max="40" step="0.2" value="18.5" />
+          <span class="value-badge" id="wallTopVal">18.5%</span>
         </div>
         <div class="row">
           <span class="label">下壁</span>
-          <input type="range" id="wallBottom" min="50" max="95" step="0.2" value="65.0" />
-          <span class="value-badge" id="wallBottomVal">65.0%</span>
+          <input type="range" id="wallBottom" min="55" max="95" step="0.2" value="78.5" />
+          <span class="value-badge" id="wallBottomVal">78.5%</span>
         </div>
         <div class="row">
           <span class="label">左右余白</span>
-          <input type="range" id="wallSide" min="0" max="35" step="0.2" value="22.5" />
-          <span class="value-badge" id="wallSideVal">22.5%</span>
+          <input type="range" id="wallSide" min="0" max="15" step="0.2" value="2.5" />
+          <span class="value-badge" id="wallSideVal">2.5%</span>
         </div>
       </div>
     </details>
   </div>
 </div>
 
-<!-- 下部固定アクションバー -->
 <div class="bottom-bar">
   <div class="bottom-bar-inner">
     <button id="lockBtn">始点を固定する</button>
-    <button id="resetBtn">再検出/リセット</button>
+    <button id="resetBtn">リセット</button>
   </div>
 </div>
 
@@ -362,218 +339,21 @@
   const canvas = document.getElementById("canvas");
   const ctx = canvas.getContext("2d");
   const placeholder = document.getElementById("placeholder");
-  const statusToast = document.getElementById("statusToast");
 
   let img = null;
   let origin = { x: 0, y: 0 };
-  let detectedAuraRadius = 0;
-  let angleDeg = 270.0;
+  let angleDeg = 45.0;
   let isLocked = false;
   let isReflect = true;
   let maxBounces = 5;
 
-  let wall = { top: 21.5, bottom: 65.0, side: 22.5 };
+  let wall = { top: 18.5, bottom: 78.5, side: 2.5 };
 
   const angleSlider = document.getElementById("angleSlider");
   const angleVal = document.getElementById("angleVal");
   const xSlider = document.getElementById("xSlider");
   const ySlider = document.getElementById("ySlider");
   const lockBtn = document.getElementById("lockBtn");
-
-  function showToast(msg) {
-    statusToast.textContent = msg;
-    statusToast.style.display = "block";
-    clearTimeout(showToast._timer);
-    showToast._timer = setTimeout(() => {
-      statusToast.style.display = "none";
-    }, 3500);
-  }
-
-  /**
-   * 左右の黒帯を検出し、モンスト画面の横幅を推定
-   */
-  function detectGameViewport(data, w, h) {
-    const sampleY1 = Math.round(h * 0.35);
-    const sampleY2 = Math.round(h * 0.65);
-
-    function isDarkCol(x) {
-      let dark = 0, total = 0;
-      for (let y = sampleY1; y <= sampleY2; y += 3) {
-        const p = (y * w + x) * 4;
-        total++;
-        if (data[p] < 40 && data[p + 1] < 40 && data[p + 2] < 40) dark++;
-      }
-      return dark / total > 0.7;
-    }
-
-    let left = 0;
-    while (left < w * 0.42 && isDarkCol(left)) left++;
-    let right = w - 1;
-    while (right > w * 0.58 && isDarkCol(right)) right--;
-
-    if (right - left < w * 0.35) {
-      left = 0;
-      right = w - 1;
-    }
-    return { left, right, viewW: Math.max(40, right - left + 1) };
-  }
-
-  /**
-   * 周囲の発光オーラと「1st / 2nd」バッジ直下の条件を組み合わせて中心を検出
-   */
-  function autoDetectAuraCenter(sourceImg) {
-    const scaleW = 420;
-    const scale = scaleW / sourceImg.width;
-    const w = scaleW;
-    const h = Math.round(sourceImg.height * scale);
-
-    const off = document.createElement("canvas");
-    off.width = w;
-    off.height = h;
-    const octx = off.getContext("2d", { willReadFrequently: true });
-    octx.drawImage(sourceImg, 0, 0, w, h);
-    const data = octx.getImageData(0, 0, w, h).data;
-
-    const vp = detectGameViewport(data, w, h);
-    const unit = vp.viewW;
-
-    const size = w * h;
-    const bright = new Float32Array(size);
-    const colorful = new Float32Array(size);
-    const whitePx = new Uint8Array(size);
-    const badgeInkPx = new Uint8Array(size);
-
-    for (let i = 0; i < size; i++) {
-      const p = i * 4;
-      const r = data[p], g = data[p + 1], b = data[p + 2];
-      const maxC = Math.max(r, g, b);
-      const minC = Math.min(r, g, b);
-      bright[i] = maxC;
-      colorful[i] = maxC - minC;
-
-      if (r > 205 && g > 205 && b > 205) whitePx[i] = 1;
-      if ((r > 150 && g < 150) || (b > 150 && r < 185)) {
-        badgeInkPx[i] = 1;
-      }
-    }
-
-    const ringR = unit * 0.060;
-    const numSamples = 36;
-    const cosT = new Float32Array(numSamples);
-    const sinT = new Float32Array(numSamples);
-    for (let k = 0; k < numSamples; k++) {
-      const a = (k * Math.PI * 2) / numSamples;
-      cosT[k] = Math.cos(a);
-      sinT[k] = Math.sin(a);
-    }
-
-    const minX = Math.max(vp.left, Math.round(vp.left + unit * 0.07));
-    const maxX = Math.min(vp.right, Math.round(vp.right - unit * 0.07));
-    const minY = Math.max(2, Math.round(h * 0.25));
-    const maxY = Math.min(h - 3, Math.round(h * 0.72));
-
-    function scorePoint(cx, cy) {
-      let ringBrightSum = 0;
-      let ringColorSum = 0;
-      let brightSampleCnt = 0;
-
-      for (let k = 0; k < numSamples; k++) {
-        const sx = Math.round(cx + cosT[k] * ringR);
-        const sy = Math.round(cy + sinT[k] * ringR);
-        if (sx < 0 || sx >= w || sy < 0 || sy >= h) continue;
-        const idx = sy * w + sx;
-        ringBrightSum += bright[idx];
-        ringColorSum += colorful[idx];
-        if (bright[idx] > 165) brightSampleCnt++;
-      }
-
-      const avgRingBright = ringBrightSum / numSamples;
-      const avgRingColor = ringColorSum / numSamples;
-
-      if (avgRingBright < 130 || brightSampleCnt < 6) return -1;
-
-      const bx1 = Math.max(0, Math.round(cx - unit * 0.075));
-      const bx2 = Math.min(w - 1, Math.round(cx + unit * 0.025));
-      const by1 = Math.max(0, Math.round(cy - unit * 0.088));
-      const by2 = Math.max(0, Math.round(cy - unit * 0.024));
-
-      let wCnt = 0;
-      let inkCnt = 0;
-      for (let y = by1; y <= by2; y++) {
-        const row = y * w;
-        for (let x = bx1; x <= bx2; x++) {
-          const idx = row + x;
-          wCnt += whitePx[idx];
-          inkCnt += badgeInkPx[idx];
-        }
-      }
-
-      const hasBadge = wCnt >= 6 && inkCnt >= 3;
-      const badgeMultiplier = hasBadge ? 2.5 + Math.min(2.0, (wCnt + inkCnt) * 0.03) : 0.45;
-      const colorBonus = 1.0 + Math.min(0.6, avgRingColor / 180);
-
-      return avgRingBright * brightSampleCnt * badgeMultiplier * colorBonus;
-    }
-
-    let bestScore = -1;
-    let bestX = Math.round((vp.left + vp.right) * 0.5);
-    let bestY = Math.round(h * 0.58);
-
-    for (let cy = minY; cy <= maxY; cy += 2) {
-      for (let cx = minX; cx <= maxX; cx += 2) {
-        const sc = scorePoint(cx, cy);
-        if (sc > bestScore) {
-          bestScore = sc;
-          bestX = cx;
-          bestY = cy;
-        }
-      }
-    }
-
-    if (bestScore > 0) {
-      const sx0 = bestX, sy0 = bestY;
-      for (let cy = sy0 - 5; cy <= sy0 + 5; cy++) {
-        for (let cx = sx0 - 5; cx <= sx0 + 5; cx++) {
-          if (cx < minX || cx > maxX || cy < minY || cy > maxY) continue;
-          const sc = scorePoint(cx, cy);
-          if (sc > bestScore) {
-            bestScore = sc;
-            bestX = cx;
-            bestY = cy;
-          }
-        }
-      }
-      return {
-        found: true,
-        x: Math.round(bestX / scale),
-        y: Math.round(bestY / scale),
-        radius: Math.round(ringR / scale)
-      };
-    }
-
-    return {
-      found: false,
-      x: Math.round((vp.left + vp.right) * 0.5 / scale),
-      y: Math.round(h * 0.58 / scale),
-      radius: Math.round(ringR / scale)
-    };
-  }
-
-  function runAutoDetect() {
-    if (!img) return;
-    const res = autoDetectAuraCenter(img);
-    origin.x = res.x;
-    origin.y = res.y;
-    detectedAuraRadius = res.radius;
-    xSlider.value = origin.x;
-    ySlider.value = origin.y;
-    draw();
-    if (res.found) {
-      showToast("オーラ中心を検出しました（ズレる場合はドラッグで微調整）");
-    } else {
-      showToast("オーラを検出できませんでした（手動で配置してください）");
-    }
-  }
 
   function loadImageFromSrc(src) {
     const newImg = new Image();
@@ -584,13 +364,16 @@
       placeholder.style.display = "none";
       canvas.style.display = "block";
 
+      origin.x = Math.round(img.width * 0.5);
+      origin.y = Math.round(img.height * 0.5);
       xSlider.max = img.width;
       ySlider.max = img.height;
+      xSlider.value = origin.x;
+      ySlider.value = origin.y;
 
       isLocked = false;
       updateLockUI();
-
-      runAutoDetect();
+      draw();
     };
     newImg.src = src;
   }
@@ -618,13 +401,6 @@
     } catch (err) {
       alert("貼り付けが許可されていません。「画像読込」から選択してください。");
     }
-  });
-
-  document.getElementById("autoDetectBtn").addEventListener("click", () => {
-    if (!img) return;
-    isLocked = false;
-    updateLockUI();
-    runAutoDetect();
   });
 
   function updateLockUI() {
@@ -716,8 +492,11 @@
     if (!img) return;
     isLocked = false;
     updateLockUI();
+    origin.x = Math.round(img.width * 0.5);
+    origin.y = Math.round(img.height * 0.5);
+    xSlider.value = origin.x;
+    ySlider.value = origin.y;
     setAngle(270);
-    runAutoDetect();
   });
 
   document.getElementById("shareBtn").addEventListener("click", async () => {
@@ -852,17 +631,7 @@
     }
     ctx.restore();
 
-    const auraR = detectedAuraRadius || Math.round(w * 0.045);
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(origin.x, origin.y, auraR, 0, Math.PI * 2);
-    ctx.strokeStyle = isLocked ? "rgba(239, 68, 68, 0.45)" : "rgba(34, 197, 94, 0.55)";
-    ctx.lineWidth = Math.max(2, w * 0.004);
-    ctx.setLineDash([6, 6]);
-    ctx.stroke();
-    ctx.restore();
-
-    const r = Math.max(14, w * 0.025);
+    const r = Math.max(18, w * 0.035);
     ctx.save();
     ctx.beginPath();
     ctx.arc(origin.x, origin.y, r, 0, Math.PI * 2);
