@@ -357,7 +357,6 @@
   let isReflect = true;
   let maxBounces = 5;
 
-  // 壁の比率 (%)（二重枠スクショにも対応しやすい初期値）
   let wall = { top: 21.5, bottom: 65.0, side: 22.5 };
 
   const angleSlider = document.getElementById("angleSlider");
@@ -376,47 +375,36 @@
   }
 
   /**
-   * 画像内の黒帯・余白を自動検出し、実際のゲーム画面領域を返す
+   * 左右の黒帯を検出し、モンスト画面の横幅を推定
    */
   function detectGameViewport(data, w, h) {
-    // 縦中央付近（h * 0.35 〜 h * 0.65）で左右の黒帯を調べる
     const sampleY1 = Math.round(h * 0.35);
     const sampleY2 = Math.round(h * 0.65);
 
     function isDarkCol(x) {
-      let dark = 0;
-      let total = 0;
+      let dark = 0, total = 0;
       for (let y = sampleY1; y <= sampleY2; y += 3) {
         const p = (y * w + x) * 4;
         total++;
-        if (data[p] < 35 && data[p + 1] < 35 && data[p + 2] < 35) {
-          dark++;
-        }
+        if (data[p] < 40 && data[p + 1] < 40 && data[p + 2] < 40) dark++;
       }
-      return dark / total > 0.75;
+      return dark / total > 0.7;
     }
 
     let left = 0;
     while (left < w * 0.42 && isDarkCol(left)) left++;
-
     let right = w - 1;
     while (right > w * 0.58 && isDarkCol(right)) right--;
 
-    // 黒帯がない全画面スクショの場合
     if (right - left < w * 0.35) {
       left = 0;
       right = w - 1;
     }
-
-    const viewW = Math.max(40, right - left + 1);
-    const top = Math.round(h * 0.14);
-    const bottom = Math.round(h * 0.82);
-
-    return { left, right, top, bottom, viewW };
+    return { left, right, viewW: Math.max(40, right - left + 1) };
   }
 
   /**
-   * 「1st / 2nd / 3rd / 4th」バッジ直下にあるターンオーラ中心を自動検出
+   * 周囲の発光オーラと「1st / 2nd」バッジ直下の条件を組み合わせて中心を検出
    */
   function autoDetectAuraCenter(sourceImg) {
     const scaleW = 420;
@@ -432,400 +420,42 @@
     const data = octx.getImageData(0, 0, w, h).data;
 
     const vp = detectGameViewport(data, w, h);
-    const unit = vp.viewW; // 実際のモンスト画面の横幅基準
+    const unit = vp.viewW;
 
-    const minX = Math.max(vp.left, Math.round(vp.left + unit * 0.06));
-    const maxX = Math.min(vp.right, Math.round(vp.right - unit * 0.06));
-    const minY = Math.max(0, Math.round(h * 0.22));
-    const maxY = Math.min(h - 1, Math.round(h * 0.72));
-
+    // 輝度＆彩度マップ
     const size = w * h;
-    const whiteMask = new Uint8Array(size);
-    const badgeColorMask = new Uint8Array(size);
-    const auraMask = new Uint8Array(size);
-    const yellowBarrier = new Uint8Array(size);
-    const hpGreenMask = new Uint8Array(size);
-    const darkMask = new Uint8Array(size);
+    const bright = new Float32Array(size);
+    const colorful = new Float32Array(size);
+    const whitePx = new Uint8Array(size);
+    const badgeInkPx = new Uint8Array(size);
 
     for (let i = 0; i < size; i++) {
       const p = i * 4;
       const r = data[p], g = data[p + 1], b = data[p + 2];
+      const maxC = Math.max(r, g, b);
+      const minC = Math.min(r, g, b);
+      bright[i] = maxC;
+      colorful[i] = maxC - minC;
 
-      if (r > 215 && g > 215 && b > 215) {
-        whiteMask[i] = 1;
-      }
-
-      const is1stRed = r > 170 && g < 120 && b < 120 && r - g > 85;
-      const is2ndOrange = r > 190 && g >= 80 && g <= 170 && b < 90 && r - g > 50;
-      const is3rd4thBluePurple = b > 165 && r < 190 && b - g > 40;
-      if (is1stRed || is2ndOrange || is3rd4thBluePurple) {
-        badgeColorMask[i] = 1;
-      }
-
-      const isMagentaPink = r > 180 && b > 150 && g < 215 && (r - g > 30 || b - g > 20);
-      const isCyanGlow = b > 190 && g > 170 && r < 220 && b - r > 15;
-      const isWhiteGlow = r > 228 && g > 222 && b > 232;
-      if (isMagentaPink || isCyanGlow || isWhiteGlow) {
-        auraMask[i] = 1;
-      }
-
-      if (r > 205 && g > 185 && b < 165 && r - b > 55) {
-        yellowBarrier[i] = 1;
-      }
-
-      if (g > 160 && r < 150 && b < 115 && g - r > 40) {
-        hpGreenMask[i] = 1;
-      }
-
-      if (r < 55 && g < 55 && b < 55) {
-        darkMask[i] = 1;
+      if (r > 205 && g > 205 && b > 205) whitePx[i] = 1;
+      // 赤・橙・青・紫などバッジ文字色のインク
+      if ((r > 150 && g < 150) || (b > 150 && r < 185)) {
+        badgeInkPx[i] = 1;
       }
     }
 
-    const rInner = unit * 0.052;
-    const rOuter = unit * 0.068;
+    // キャラ外周のオーラリング半径（画面横幅の約6%）
+    const ringR = unit * 0.060;
     const numSamples = 36;
-    const cosTable = new Float32Array(numSamples);
-    const sinTable = new Float32Array(numSamples);
+    const cosT = new Float32Array(numSamples);
+    const sinT = new Float32Array(numSamples);
     for (let k = 0; k < numSamples; k++) {
       const a = (k * Math.PI * 2) / numSamples;
-      cosTable[k] = Math.cos(a);
-      sinTable[k] = Math.sin(a);
+      cosT[k] = Math.cos(a);
+      sinT[k] = Math.sin(a);
     }
 
-    function evaluateCandidate(cx, cy) {
-      // 1. ワープホール中心の黒除外
-      let darkCount = 0;
-      const coreR = Math.max(2, Math.round(unit * 0.022));
-      for (let dy = -coreR; dy <= coreR; dy += 2) {
-        for (let dx = -coreR; dx <= coreR; dx += 2) {
-          const idx = (cy + dy) * w + (cx + dx);
-          if (idx >= 0 && idx < size && darkMask[idx]) darkCount++;
-        }
-      }
-      if (darkCount > 8) return -1;
-
-      // 2. 敵のHPバー除外
-      const hpY1 = Math.min(h - 1, Math.round(cy + unit * 0.045));
-      const hpY2 = Math.min(h - 1, Math.round(cy + unit * 0.095));
-      const hpX1 = Math.max(0, Math.round(cx - unit * 0.05));
-      const hpX2 = Math.min(w - 1, Math.round(cx + unit * 0.05));
-      let hpHits = 0;
-      for (let y = hpY1; y <= hpY2; y++) {
-        for (let x = hpX1; x <= hpX2; x++) {
-          if (hpGreenMask[y * w + x]) hpHits++;
-        }
-      }
-      if (hpHits >= 5) return -1;
-
-      // 3. 「1st / 2nd / 3rd / 4th」バッジが直上〜左上に存在するか
-      const bx1 = Math.max(0, Math.round(cx - unit * 0.072));
-      const bx2 = Math.min(w - 1, Math.round(cx + unit * 0.030));
-      const by1 = Math.max(0, Math.round(cy - unit * 0.088));
-      const by2 = Math.max(0, Math.round(cy - unit * 0.025));
-
-      let whiteCnt = 0;
-      let colorCnt = 0;
-      let minTextX = bx2, maxTextX = bx1;
-
-      for (let y = by1; y <= by2; y++) {
-        const rowOffset = y * w;
-        for (let x = bx1; x <= bx2; x++) {
-          const idx = rowOffset + x;
-          if (whiteMask[idx]) whiteCnt++;
-          if (badgeColorMask[idx]) {
-            colorCnt++;
-            if (x < minTextX) minTextX = x;
-            if (x > maxTextX) maxTextX = x;
-          }
-        }
-      }
-
-      const textWidth = maxTextX - minTextX;
-      if (whiteCnt < 7 || colorCnt < 3 || textWidth < unit * 0.018) return -1;
-
-      const badgeScore = Math.min(45, whiteCnt) + Math.min(60, colorCnt * 2.5);
-
-      // 4. キャラ外周のオーラリング評価
-      let auraHits = 0;
-      let yellowHits = 0;
-      const quadHits = [0, 0, 0, 0];
-
-      for (let k = 0; k < numSamples; k++) {
-        const q = Math.floor((k * 4) / numSamples);
-        const x1 = Math.round(cx + cosTable[k] * rInner);
-        const y1 = Math.round(cy + sinTable[k] * rInner);
-        const x2 = Math.round(cx + cosTable[k] * rOuter);
-        const y2 = Math.round(cy + sinTable[k] * rOuter);
-
-        let hit = 0;
-        if (x1 >= 0 && x1 < w && y1 >= 0 && y1 < h) {
-          const idx1 = y1 * w + x1;
-          if (auraMask[idx1]) hit++;
-          if (yellowBarrier[idx1]) yellowHits++;
-        }
-        if (x2 >= 0 && x2 < w && y2 >= 0 && y2 < h) {
-          const idx2 = y2 * w + x2;
-          if (auraMask[idx2]) hit++;
-          if (yellowBarrier[idx2]) yellowHits++;
-        }
-        if (hit > 0) {
-          auraHits += hit;
-          quadHits[q] += hit;
-        }
-      }
-
-      if (yellowHits > auraHits) return -1;
-      if (auraHits < 8) return -1;
-
-      const activeQuads = quadHits.filter((v) => v > 0).length;
-      const quadBonus = activeQuads === 4 ? 1.6 : activeQuads === 3 ? 1.15 : 0.6;
-
-      return badgeScore * auraHits * quadBonus;
-    }
-
-    let bestScore = -1;
-    let bestX = Math.round((vp.left + vp.right) * 0.5);
-    let bestY = Math.round(h * 0.58);
-
-    for (let cy = minY; cy <= maxY; cy += 2) {
-      for (let cx = minX; cx <= maxX; cx += 2) {
-        const sc = evaluateCandidate(cx, cy);
-        if (sc > bestScore) {
-          bestScore = sc;
-          bestX = cx;
-          bestY = cy;
-        }
-      }
-    }
-
-    if (bestScore > 0) {
-      const searchR = 4;
-      const startX = bestX, startY = bestY;
-      for (let cy = startY - searchR; cy <= startY + searchR; cy++) {
-        for (let cx = startX - searchR; cx <= startX + searchR; cx++) {
-          if (cx < minX || cx > maxX || cy < minY || cy > maxY) continue;
-          const sc = evaluateCandidate(cx, cy);
-          if (sc > bestScore) {
-            bestScore = sc;
-            bestX = cx;
-            bestY = cy;
-          }
-        }
-      }
-      return {
-        found: true,
-        x: Math.round(bestX / scale),
-        y: Math.round(bestY / scale),
-        radius: Math.round(((rInner + rOuter) * 0.5) / scale)
-      };
-    }
-
-    return {
-      found: false,
-      x: Math.round((vp.left + vp.right) * 0.5 / scale),
-      y: Math.round(h * 0.58 / scale),
-      radius: Math.round(unit * 0.06 / scale)
-    };
-  }
-
-  function runAutoDetect() {
-    if (!img) return;
-    const res = autoDetectAuraCenter(img);
-    origin.x = res.x;
-    origin.y = res.y;
-    detectedAuraRadius = res.radius;
-    xSlider.value = origin.x;
-    ySlider.value = origin.y;
-    draw();
-    if (res.found) {
-      showToast("1st/2nd下のオーラ中心を自動検出しました");
-    } else {
-      showToast("オーラを自動検出できませんでした（手動調整可）");
-    }
-  }
-
-  function loadImageFromSrc(src) {
-    const newImg = new Image();
-    newImg.onload = () => {
-      img = newImg;
-      canvas.width = img.width;
-      canvas.height = img.height;
-      placeholder.style.display = "none";
-      canvas.style.display = "block";
-
-      xSlider.max = img.width;
-      ySlider.max = img.height;
-
-      isLocked = false;
-      updateLockUI();
-
-      runAutoDetect();
-    };
-    newImg.src = src;
-  }
-
-  document.getElementById("fileInput").addEventListener("change", (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => loadImageFromSrc(ev.target.result);
-    reader.readAsDataURL(file);
-  });
-
-  document.getElementById("pasteBtn").addEventListener("click", async () => {
-    try {
-      const items = await navigator.clipboard.read();
-      for (const item of items) {
-        const imageType = item.types.find((t) => t.startsWith("image/"));
-        if (imageType) {
-          const blob = await item.getType(imageType);
-          loadImageFromSrc(URL.createObjectURL(blob));
-          return;
-        }
-      }
-      alert("クリップボードに画像が見つかりませんでした。");
-    } catch (err) {
-      alert("貼り付けが許可されていません。「画像読込」から選択してください。");
-    }
-  });
-
-  document.getElementById("autoDetectBtn").addEventListener("click", () => {
-    if (!img) return;
-    isLocked = false;
-    updateLockUI();
-    runAutoDetect();
-  });
-
-  function updateLockUI() {
-    if (isLocked) {
-      lockBtn.textContent = "始点ロック中（解除）";
-      lockBtn.classList.add("lock-active");
-    } else {
-      lockBtn.textContent = "始点を固定する";
-      lockBtn.classList.remove("lock-active");
-    }
-  }
-  lockBtn.addEventListener("click", () => {
-    isLocked = !isLocked;
-    updateLockUI();
-    draw();
-  });
-
-  document.getElementById("typeReflect").addEventListener("click", (e) => {
-    isReflect = true;
-    e.target.classList.add("active");
-    document.getElementById("typePierce").classList.remove("active");
-    draw();
-  });
-  document.getElementById("typePierce").addEventListener("click", (e) => {
-    isReflect = false;
-    e.target.classList.add("active");
-    document.getElementById("typeReflect").classList.remove("active");
-    draw();
-  });
-
-  document.getElementById("bounceSelect").addEventListener("change", (e) => {
-    maxBounces = parseInt(e.target.value, 10);
-    draw();
-  });
-
-  function setAngle(val) {
-    angleDeg = ((val % 360) + 360) % 360;
-    angleSlider.value = angleDeg.toFixed(1);
-    angleVal.textContent = `${angleDeg.toFixed(1)}°`;
-    draw();
-  }
-  angleSlider.addEventListener("input", (e) => setAngle(parseFloat(e.target.value)));
-
-  document.querySelectorAll("[data-angle]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      setAngle(angleDeg + parseFloat(btn.dataset.angle));
-    });
-  });
-
-  xSlider.addEventListener("input", (e) => {
-    if (isLocked) return;
-    origin.x = parseInt(e.target.value, 10);
-    draw();
-  });
-  ySlider.addEventListener("input", (e) => {
-    if (isLocked) return;
-    origin.y = parseInt(e.target.value, 10);
-    draw();
-  });
-  document.querySelectorAll("[data-dx]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (isLocked || !img) return;
-      origin.x = Math.max(0, Math.min(img.width, origin.x + parseInt(btn.dataset.dx, 10)));
-      xSlider.value = origin.x;
-      draw();
-    });
-  });
-  document.querySelectorAll("[data-dy]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (isLocked || !img) return;
-      origin.y = Math.max(0, Math.min(img.height, origin.y + parseInt(btn.dataset.dy, 10)));
-      ySlider.value = origin.y;
-      draw();
-    });
-  });
-
-  ["wallTop", "wallBottom", "wallSide"].forEach((id) => {
-    document.getElementById(id).addEventListener("input", (e) => {
-      const v = parseFloat(e.target.value);
-      if (id === "wallTop") wall.top = v;
-      if (id === "wallBottom") wall.bottom = v;
-      if (id === "wallSide") wall.side = v;
-      document.getElementById(id + "Val").textContent = `${v.toFixed(1)}%`;
-      draw();
-    });
-  });
-
-  document.getElementById("resetBtn").addEventListener("click", () => {
-    if (!img) return;
-    isLocked = false;
-    updateLockUI();
-    setAngle(270);
-    runAutoDetect();
-  });
-
-  document.getElementById("shareBtn").addEventListener("click", async () => {
-    if (!img) return;
-    canvas.toBlob(async (blob) => {
-      const file = new File([blob], "monst_guide.png", { type: "image/png" });
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: "弾道予測" });
-      } else {
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = "monst_guide.png";
-        a.click();
-      }
-    });
-  });
-
-  let dragging = false;
-  function getCanvasPos(clientX, clientY) {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY,
-    };
-  }
-
-  function handlePointer(clientX, clientY) {
-    if (!img) return;
-    const pos = getCanvasPos(clientX, clientY);
-    if (!isLocked) {
-      origin.x = Math.max(0, Math.min(img.width, Math.round(pos.x)));
-      origin.y = Math.max(0, Math.min(img.height, Math.round(pos.y)));
-      xSlider.value = origin.x;
-      ySlider.value = origin.y;
-      draw();
-    } else {
-      const rad = Math.atan2(pos.y - origin.y, pos.x - origin.x);
-      setAngle((rad * 180) / Math.PI);
-    }
+    const minX = Math.max(vp.left, Math.round(vp.left + unit * 0.07));
+    const maxX = Math.min(vp.right, Math.round(vp.right - unit * 0.07));
+    const minY = Math.max(2, Math.round(h * 0.25));
+    const
